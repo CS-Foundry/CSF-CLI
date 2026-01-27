@@ -2,8 +2,9 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use dialoguer::{Input, Password};
 use reqwest;
 use rsa::pkcs1::DecodeRsaPublicKey;
-use rsa::{Pkcs1v15Encrypt, RsaPublicKey};
+use rsa::{Oaep, RsaPublicKey};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 
 use crate::config::{load_config, save_config, Config};
 
@@ -83,13 +84,15 @@ async fn get_public_key(server: &str) -> Result<RsaPublicKey, Box<dyn std::error
     Ok(public_key)
 }
 
-/// Verschlüsselt das Passwort mit dem öffentlichen RSA-Schlüssel
+/// Verschlüsselt das Passwort mit dem öffentlichen RSA-Schlüssel (RSA-OAEP mit SHA-256)
 fn encrypt_password(
     password: &str,
     public_key: &RsaPublicKey,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
-    let encrypted_data = public_key.encrypt(&mut rng, Pkcs1v15Encrypt, password.as_bytes())?;
+    // Use SHA-256 for secure RSA-OAEP encryption
+    let padding = Oaep::new::<Sha256>();
+    let encrypted_data = public_key.encrypt(&mut rng, padding, password.as_bytes())?;
     Ok(BASE64.encode(&encrypted_data))
 }
 

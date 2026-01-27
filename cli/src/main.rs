@@ -15,6 +15,10 @@ struct Cli {
 enum Commands {
     /// Login zum CSF Backend Service
     Login,
+    /// Logout vom CSF Backend Service
+    Logout,
+    /// Zeigt den aktuellen Status und Benutzerinformationen
+    Status,
 }
 
 #[tokio::main]
@@ -24,6 +28,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Login => {
             user::login::login().await?;
+        }
+        Commands::Logout => {
+            user::logout::logout().await?;
+        }
+        Commands::Status => {
+            user::status::status().await?;
         }
     }
 

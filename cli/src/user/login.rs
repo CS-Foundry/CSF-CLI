@@ -39,48 +39,24 @@ async fn get_public_key(server: &str) -> Result<RsaPublicKey, Box<dyn std::error
     let client = reqwest::Client::new();
     let url = format!("{}/api/public-key", server.trim_end_matches('/'));
 
-    println!("📡 Request: GET {}", url);
-
     let response = client
         .get(&url)
         .header("accept", "application/json")
         .send()
         .await?;
 
-    println!("📥 Response Status: {}", response.status());
-
     if !response.status().is_success() {
         return Err(format!("Fehler beim Abrufen des Public Keys: {}", response.status()).into());
     }
 
     let response_text = response.text().await?;
-    println!("📥 Response Body:\n{}", response_text);
 
     let public_key_response: PublicKeyResponse = serde_json::from_str(&response_text)?;
-    println!("\n🔑 Public Key Format erkannt");
-    println!("   Länge: {} Zeichen", public_key_response.public_key.len());
-    println!(
-        "   Start: {}...",
-        &public_key_response
-            .public_key
-            .chars()
-            .take(50)
-            .collect::<String>()
-    );
 
     // Parse PEM-formatted public key (PKCS#1 Format: RSA PUBLIC KEY)
-    println!("\n🔍 Versuche PEM zu parsen...");
     let public_key =
-        RsaPublicKey::from_pkcs1_pem(&public_key_response.public_key).map_err(|e| {
-            eprintln!("❌ PEM Parse Fehler: {}", e);
-            eprintln!(
-                "📋 Vollständiger Public Key:\n{}",
-                public_key_response.public_key
-            );
-            e
-        })?;
+        RsaPublicKey::from_pkcs1_pem(&public_key_response.public_key).map_err(|e| e)?;
 
-    println!("✅ Public Key erfolgreich geladen!");
     Ok(public_key)
 }
 
@@ -108,7 +84,7 @@ fn prompt_new_password() -> Result<String, Box<dyn std::error::Error>> {
         if new_password == confirm_password {
             return Ok(new_password);
         } else {
-            eprintln!("❌ Passwörter stimmen nicht überein. Bitte erneut versuchen.\n");
+            eprintln!("Passwörter stimmen nicht überein. Bitte erneut versuchen.\n");
         }
     }
 }
@@ -119,7 +95,7 @@ async fn change_password(
     token: &str,
     public_key: &RsaPublicKey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔒 Passwort muss geändert werden");
+    println!("\nPasswort muss geändert werden");
 
     let new_password = prompt_new_password()?;
     let encrypted_password = encrypt_password(&new_password, public_key)?;
@@ -139,7 +115,7 @@ async fn change_password(
         .await?;
 
     if response.status().is_success() {
-        println!("✅ Passwort erfolgreich geändert!");
+        println!("Passwort erfolgreich geändert!");
         Ok(())
     } else {
         let status = response.status();
@@ -175,7 +151,6 @@ pub async fn login() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Hole den öffentlichen Schlüssel vom Server
-    println!("🔑 Hole Public Key vom Server...");
     let public_key = get_public_key(&server).await?;
 
     // Frage nach Benutzername
@@ -187,36 +162,14 @@ pub async fn login() -> Result<(), Box<dyn std::error::Error>> {
     // Verschlüssele das Passwort
     let encrypted_password = encrypt_password(&password, &public_key)?;
 
-    // Frage nach 2FA Code (optional)
-    let two_factor_code: String = Input::new()
-        .with_prompt("2FA Code (leer lassen wenn nicht benötigt)")
-        .allow_empty(true)
-        .interact_text()?;
-
     println!();
     println!("⏳ Authentifizierung läuft...");
 
-    // Sende Login-Request an Backend
+    // Sende Login-Request an Backend (zunächst ohne 2FA Code)
     let client = reqwest::Client::new();
     let login_url = format!("{}/api/login", server.trim_end_matches('/'));
 
-    println!("📡 Request: POST {}", login_url);
-    println!("📤 Payload:");
-    println!("   - username: {}", username);
-    println!(
-        "   - encrypted_password: {}... ({} Zeichen)",
-        &encrypted_password.chars().take(20).collect::<String>(),
-        encrypted_password.len()
-    );
-    println!(
-        "   - two_factor_code: {}",
-        if two_factor_code.is_empty() {
-            "(leer)"
-        } else {
-            "***"
-        }
-    );
-
+    let mut two_factor_code = String::new();
     let response = client
         .post(&login_url)
         .header("accept", "application/json")
@@ -229,11 +182,44 @@ pub async fn login() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
 
-    println!("📥 Response Status: {}", response.status());
+    // Wenn 2FA benötigt wird (Status 401 oder 403), fordere Code an
+    let response = if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await?;
+
+        // Prüfe ob 2FA benötigt wird (basierend auf Fehlermeldung)
+        if error_text.contains("2FA")
+            || error_text.contains("two-factor")
+            || error_text.contains("two_factor")
+        {
+            println!("\n2FA erforderlich");
+            two_factor_code = Input::new().with_prompt("2FA Code").interact_text()?;
+
+            println!("\nAuthentifizierung mit 2FA läuft...");
+
+            // Erneuter Login-Versuch mit 2FA Code
+            client
+                .post(&login_url)
+                .header("accept", "application/json")
+                .header("Content-Type", "application/json")
+                .json(&LoginRequest {
+                    username: username.clone(),
+                    encrypted_password: encrypted_password.clone(),
+                    two_factor_code: two_factor_code.clone(),
+                })
+                .send()
+                .await?
+        } else {
+            // Anderer Fehler - gebe Fehler aus
+            eprintln!("Login fehlgeschlagen: {} - {}", status, error_text);
+            std::process::exit(1);
+        }
+    } else {
+        response
+    };
 
     if response.status().is_success() {
         let response_text = response.text().await?;
-        println!("📥 Response Body:\n{}", response_text);
 
         let login_response: LoginResponse = serde_json::from_str(&response_text)?;
 
@@ -242,12 +228,12 @@ pub async fn login() -> Result<(), Box<dyn std::error::Error>> {
         config.token = Some(login_response.token.clone());
         save_config(&config)?;
 
-        println!("✅ Login erfolgreich!");
+        println!("Login erfolgreich!");
         println!("   User: {}", login_response.username);
         println!("   User ID: {}", login_response.user_id);
 
         if login_response.two_factor_enabled {
-            println!("   🔐 2FA ist aktiviert");
+            println!("   2FA ist aktiviert");
         }
 
         // Prüfe ob Passwort geändert werden muss
@@ -255,11 +241,11 @@ pub async fn login() -> Result<(), Box<dyn std::error::Error>> {
             change_password(&server, &login_response.token, &public_key).await?;
         }
 
-        println!("\n✅ Anmeldung abgeschlossen!");
+        println!("\nAnmeldung abgeschlossen!");
     } else {
         let status = response.status();
         let error_text = response.text().await?;
-        eprintln!("❌ Login fehlgeschlagen: {} - {}", status, error_text);
+        eprintln!("Login fehlgeschlagen: {} - {}", status, error_text);
         std::process::exit(1);
     }
 

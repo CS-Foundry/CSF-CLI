@@ -26,13 +26,14 @@ pub async fn get_json(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await?;
-        eprintln!("error status={} body={}", status, body);
+        crate::display::error(&format!("request failed: {} {}", status, body));
         std::process::exit(1);
     }
 
     Ok(resp.json().await?)
 }
 
+#[allow(dead_code)]
 pub async fn post_json(
     client: &reqwest::Client,
     url: &str,
@@ -50,9 +51,10 @@ pub async fn post_json(
     if !resp.status().is_success() {
         let status = resp.status();
         let err = resp.text().await?;
-        eprintln!("error status={} body={}", status, err);
+        crate::display::error(&format!("request failed: {} {}", status, err));
         std::process::exit(1);
     }
 
     Ok(resp.json().await?)
 }
+

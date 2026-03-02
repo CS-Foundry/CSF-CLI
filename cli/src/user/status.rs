@@ -1,4 +1,6 @@
 use crate::config::load_config;
+use crate::display::{self, kv, kv_colored, section};
+use colored::Color;
 use reqwest;
 use serde::{Deserialize, Serialize};
 
@@ -11,24 +13,18 @@ struct UserInfo {
 }
 
 pub async fn status() -> Result<(), Box<dyn std::error::Error>> {
-    println!("📊 CSF Status");
-    println!();
-
-    // Lade existierende Config
     let config = load_config();
 
     match config {
         Some(cfg) => {
-            println!("Server: {}", cfg.server);
+            section("Session");
+            kv("Server", &cfg.server);
 
             match &cfg.token {
                 Some(token) => {
-                    println!("Status: ✅ Angemeldet");
-                    println!();
+                    kv_colored("Status", "authenticated", Color::Green);
 
-                    // Versuche User-Informationen vom Server zu holen
-                    println!("⏳ Hole Benutzerinformationen...");
-
+                    let pb = display::spinner("fetching user info...");
                     let client = reqwest::Client::new();
                     let url = format!("{}/api/user/me", cfg.server.trim_end_matches('/'));
 
@@ -37,50 +33,54 @@ pub async fn status() -> Result<(), Box<dyn std::error::Error>> {
                         .header("accept", "application/json")
                         .header("Authorization", format!("Bearer {}", token))
                         .send()
-                        .await?;
+                        .await;
+                    pb.finish_and_clear();
 
-                    if response.status().is_success() {
-                        let user_info: UserInfo = response.json().await?;
-                        println!();
-                        println!("Benutzerinformationen:");
-                        println!("   User ID: {}", user_info.user_id);
-                        println!("   Benutzername: {}", user_info.username);
-
-                        if let Some(email) = user_info.email {
-                            println!("   E-Mail: {}", email);
-                        }
-
-                        println!(
-                            "   2FA: {}",
-                            if user_info.two_factor_enabled {
-                                "✅ Aktiviert"
-                            } else {
-                                "❌ Nicht aktiviert"
+                    match response {
+                        Ok(resp) if resp.status().is_success() => {
+                            let user_info: UserInfo = resp.json().await?;
+                            section("User");
+                            kv("ID", &user_info.user_id);
+                            kv("Username", &user_info.username);
+                            if let Some(email) = user_info.email {
+                                kv("Email", &email);
                             }
-                        );
-                    } else {
-                        let status = response.status();
-                        println!();
-                        println!(
-                            "⚠️  Token ist möglicherweise abgelaufen (Status: {})",
-                            status
-                        );
-                        println!("   Bitte melde dich erneut an mit: csf login");
+                            kv_colored(
+                                "2FA",
+                                if user_info.two_factor_enabled {
+                                    "enabled"
+                                } else {
+                                    "disabled"
+                                },
+                                if user_info.two_factor_enabled {
+                                    Color::Green
+                                } else {
+                                    Color::Yellow
+                                },
+                            );
+                        }
+                        Ok(resp) => {
+                            display::warn(&format!(
+                                "token may be expired ({}), run: csf login",
+                                resp.status()
+                            ));
+                        }
+                        Err(e) => {
+                            display::warn(&format!("could not reach server: {}", e));
+                        }
                     }
                 }
                 None => {
-                    println!("Status: ❌ Nicht angemeldet");
-                    println!();
-                    println!("💡 Melde dich an mit: csf login");
+                    kv_colored("Status", "not authenticated", Color::Red);
+                    display::info("run: csf login");
                 }
             }
         }
         None => {
-            println!("Status: ❌ Keine Konfiguration gefunden");
-            println!();
-            println!("💡 Melde dich an mit: csf login");
+            display::warn("no configuration found, run: csf login");
         }
     }
 
+    println!();
     Ok(())
 }

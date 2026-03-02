@@ -1,6 +1,6 @@
 [package]
 name = "csf"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -15,3 +15,6 @@ rsa = "0.9"
 base64 = "0.21"
 rand = "0.8"
 sha2 = "0.10"
+colored = "2.1"
+indicatif = "0.17"
+chrono = { version = "0.4", features = ["serde"] }

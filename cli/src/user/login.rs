@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
 use crate::config::{load_config, save_config, Config};
+use crate::display;
 
 #[derive(Serialize, Deserialize)]
 struct LoginRequest {
@@ -31,10 +32,10 @@ struct PublicKeyResponse {
 
 #[derive(Serialize, Deserialize)]
 struct ChangePasswordRequest {
+    old_password: String,
     new_password: String,
 }
 
-/// Holt den öffentlichen RSA-Schlüssel vom Server
 async fn get_public_key(server: &str) -> Result<RsaPublicKey, Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
     let url = format!("{}/api/public-key", server.trim_end_matches('/'));
@@ -46,59 +47,49 @@ async fn get_public_key(server: &str) -> Result<RsaPublicKey, Box<dyn std::error
         .await?;
 
     if !response.status().is_success() {
-        return Err(format!("Fehler beim Abrufen des Public Keys: {}", response.status()).into());
+        return Err(format!("failed to fetch public key: {}", response.status()).into());
     }
 
-    let response_text = response.text().await?;
-
-    let public_key_response: PublicKeyResponse = serde_json::from_str(&response_text)?;
-
-    // Parse PEM-formatted public key (PKCS#1 Format: RSA PUBLIC KEY)
-    let public_key =
-        RsaPublicKey::from_pkcs1_pem(&public_key_response.public_key).map_err(|e| e)?;
+    let text = response.text().await?;
+    let key_response: PublicKeyResponse = serde_json::from_str(&text)?;
+    let public_key = RsaPublicKey::from_pkcs1_pem(&key_response.public_key)?;
 
     Ok(public_key)
 }
 
-/// Verschlüsselt das Passwort mit dem öffentlichen RSA-Schlüssel (RSA-OAEP mit SHA-256)
 fn encrypt_password(
     password: &str,
     public_key: &RsaPublicKey,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
-    // Use SHA-256 for secure RSA-OAEP encryption
     let padding = Oaep::new::<Sha256>();
-    let encrypted_data = public_key.encrypt(&mut rng, padding, password.as_bytes())?;
-    Ok(BASE64.encode(&encrypted_data))
+    let encrypted = public_key.encrypt(&mut rng, padding, password.as_bytes())?;
+    Ok(BASE64.encode(&encrypted))
 }
 
-/// Fordert den Benutzer zur Eingabe eines neuen Passworts auf
 fn prompt_new_password() -> Result<String, Box<dyn std::error::Error>> {
     loop {
-        let new_password = Password::new().with_prompt("Neues Passwort").interact()?;
+        let new_password = Password::new().with_prompt("new password").interact()?;
+        let confirm = Password::new().with_prompt("confirm password").interact()?;
 
-        let confirm_password = Password::new()
-            .with_prompt("Passwort bestätigen")
-            .interact()?;
-
-        if new_password == confirm_password {
+        if new_password == confirm {
             return Ok(new_password);
-        } else {
-            eprintln!("Passwörter stimmen nicht überein. Bitte erneut versuchen.\n");
         }
+
+        display::warn("passwords do not match, try again");
     }
 }
 
-/// Ändert das Passwort des Benutzers
 async fn change_password(
     server: &str,
     token: &str,
     public_key: &RsaPublicKey,
+    old_password_plain: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\nPasswort muss geändert werden");
-
+    display::warn("password change required");
     let new_password = prompt_new_password()?;
-    let encrypted_password = encrypt_password(&new_password, public_key)?;
+    let encrypted_old = encrypt_password(old_password_plain, public_key)?;
+    let encrypted_new = encrypt_password(&new_password, public_key)?;
 
     let client = reqwest::Client::new();
     let url = format!("{}/api/change-password", server.trim_end_matches('/'));
@@ -109,67 +100,53 @@ async fn change_password(
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", token))
         .json(&ChangePasswordRequest {
-            new_password: encrypted_password,
+            old_password: encrypted_old,
+            new_password: encrypted_new,
         })
         .send()
         .await?;
 
     if response.status().is_success() {
-        println!("Passwort erfolgreich geändert!");
+        display::success("password changed");
         Ok(())
     } else {
         let status = response.status();
-        let error_text = response.text().await?;
-        Err(format!(
-            "Fehler beim Ändern des Passworts: {} - {}",
-            status, error_text
-        )
-        .into())
+        let body = response.text().await?;
+        Err(format!("password change failed: {} - {}", status, body).into())
     }
 }
 
 pub async fn login() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔐 CSF Login");
-    println!();
-
-    // Lade existierende Config falls vorhanden
     let mut config = load_config().unwrap_or_else(|| Config {
         server: String::new(),
         token: None,
     });
 
-    // Frage nach Server (mit default falls schon gespeichert)
     let server: String = if config.server.is_empty() {
         Input::new()
-            .with_prompt("Server URL (z.B. http://192.168.1.36:8000)")
+            .with_prompt("server URL")
             .interact_text()?
     } else {
         Input::new()
-            .with_prompt("Server URL")
+            .with_prompt("server URL")
             .default(config.server.clone())
             .interact_text()?
     };
 
-    // Hole den öffentlichen Schlüssel vom Server
-    let public_key = get_public_key(&server).await?;
+    let pb = display::spinner("connecting to server...");
+    let public_key = get_public_key(&server).await;
+    pb.finish_and_clear();
+    let public_key = public_key?;
 
-    // Frage nach Benutzername
-    let username: String = Input::new().with_prompt("Benutzername").interact_text()?;
-
-    // Frage nach Passwort (wird nicht angezeigt)
-    let password = Password::new().with_prompt("Passwort").interact()?;
-
-    // Verschlüssele das Passwort
+    let username: String = Input::new().with_prompt("username").interact_text()?;
+    let password = Password::new().with_prompt("password").interact()?;
     let encrypted_password = encrypt_password(&password, &public_key)?;
 
-    println!();
-    println!("⏳ Authentifizierung läuft...");
+    let pb = display::spinner("authenticating...");
 
-    // Sende Login-Request an Backend (zunächst ohne 2FA Code)
     let client = reqwest::Client::new();
     let login_url = format!("{}/api/login", server.trim_end_matches('/'));
 
-    let mut two_factor_code = String::new();
     let response = client
         .post(&login_url)
         .header("accept", "application/json")
@@ -177,41 +154,39 @@ pub async fn login() -> Result<(), Box<dyn std::error::Error>> {
         .json(&LoginRequest {
             username: username.clone(),
             encrypted_password: encrypted_password.clone(),
-            two_factor_code: two_factor_code.clone(),
+            two_factor_code: String::new(),
         })
         .send()
         .await?;
 
-    // Wenn 2FA benötigt wird (Status 401 oder 403), fordere Code an
+    pb.finish_and_clear();
+
     let response = if !response.status().is_success() {
         let status = response.status();
         let error_text = response.text().await?;
 
-        // Prüfe ob 2FA benötigt wird (basierend auf Fehlermeldung)
         if error_text.contains("2FA")
             || error_text.contains("two-factor")
             || error_text.contains("two_factor")
         {
-            println!("\n2FA erforderlich");
-            two_factor_code = Input::new().with_prompt("2FA Code").interact_text()?;
+            let code: String = Input::new().with_prompt("2FA code").interact_text()?;
 
-            println!("\nAuthentifizierung mit 2FA läuft...");
-
-            // Erneuter Login-Versuch mit 2FA Code
-            client
+            let pb = display::spinner("authenticating with 2FA...");
+            let resp = client
                 .post(&login_url)
                 .header("accept", "application/json")
                 .header("Content-Type", "application/json")
                 .json(&LoginRequest {
                     username: username.clone(),
                     encrypted_password: encrypted_password.clone(),
-                    two_factor_code: two_factor_code.clone(),
+                    two_factor_code: code,
                 })
                 .send()
-                .await?
+                .await?;
+            pb.finish_and_clear();
+            resp
         } else {
-            // Anderer Fehler - gebe Fehler aus
-            eprintln!("Login fehlgeschlagen: {} - {}", status, error_text);
+            display::error(&format!("login failed: {} - {}", status, error_text));
             std::process::exit(1);
         }
     } else {
@@ -219,33 +194,31 @@ pub async fn login() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if response.status().is_success() {
-        let response_text = response.text().await?;
+        let text = response.text().await?;
+        let login_response: LoginResponse = serde_json::from_str(&text)?;
 
-        let login_response: LoginResponse = serde_json::from_str(&response_text)?;
-
-        // Speichere Server und Token
         config.server = server.clone();
         config.token = Some(login_response.token.clone());
         save_config(&config)?;
 
-        println!("Login erfolgreich!");
-        println!("   User: {}", login_response.username);
-        println!("   User ID: {}", login_response.user_id);
+        display::success(&format!("logged in as {}", login_response.username));
+        display::kv("User ID", &login_response.user_id);
+        display::kv(
+            "2FA",
+            if login_response.two_factor_enabled {
+                "enabled"
+            } else {
+                "disabled"
+            },
+        );
 
-        if login_response.two_factor_enabled {
-            println!("   2FA ist aktiviert");
-        }
-
-        // Prüfe ob Passwort geändert werden muss
         if login_response.force_password_change {
-            change_password(&server, &login_response.token, &public_key).await?;
+            change_password(&server, &login_response.token, &public_key, &password).await?;
         }
-
-        println!("\nAnmeldung abgeschlossen!");
     } else {
         let status = response.status();
-        let error_text = response.text().await?;
-        eprintln!("Login fehlgeschlagen: {} - {}", status, error_text);
+        let body = response.text().await?;
+        display::error(&format!("login failed: {} - {}", status, body));
         std::process::exit(1);
     }
 

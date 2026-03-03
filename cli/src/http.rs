@@ -33,6 +33,27 @@ pub async fn get_json(
     Ok(resp.json().await?)
 }
 
+pub async fn delete_req(
+    client: &reqwest::Client,
+    url: &str,
+    token: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let resp = client
+        .delete(url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await?;
+        crate::display::error(&format!("request failed: {} {}", status, body));
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
 #[allow(dead_code)]
 pub async fn post_json(
     client: &reqwest::Client,

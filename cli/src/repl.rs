@@ -22,9 +22,12 @@ const COMMANDS: &[(&str, &str)] = &[
     ("volumes nodes", "list cluster nodes (volume manager)"),
     ("registry agents", "list registered agents"),
     ("registry agents-get <id>", "show agent details"),
-    ("registry pending", "list pending agents"),
+    ("registry pre-register <name> <hostname>", "pre-register a new node"),
+    ("registry deregister <id>", "deregister an agent"),
+    ("registry pending", "list pending registrations"),
+    ("registry pending-delete <id>", "cancel a pending registration"),
     ("registry stats", "show registry statistics"),
-    ("registry tokens", "list registration tokens"),
+    ("registry tokens", "list active registration tokens"),
     ("nodes list", "list all nodes"),
     ("nodes metrics", "show system metrics"),
     ("help", "show available commands"),
@@ -47,7 +50,7 @@ impl Completer for CsfHelper {
             .iter()
             .filter(|(cmd, _)| cmd.starts_with(prefix))
             .map(|(cmd, desc)| Pair {
-                display: format!("{:<36} {}", cmd, desc.dimmed()),
+                display: format!("{:<48} {}", cmd, desc.dimmed()),
                 replacement: cmd.to_string(),
             })
             .collect();
@@ -98,7 +101,10 @@ fn print_help() {
             &[
                 "registry agents",
                 "registry agents-get <id>",
+                "registry pre-register <name> <hostname>",
+                "registry deregister <id>",
                 "registry pending",
+                "registry pending-delete <id>",
                 "registry stats",
                 "registry tokens",
             ],
@@ -112,7 +118,7 @@ fn print_help() {
         for cmd in *cmds {
             let base = cmd.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
             if let Some((_, desc)) = COMMANDS.iter().find(|(c, _)| c.starts_with(&base)) {
-                println!("    {:<36} {}", cmd.bold(), desc.dimmed());
+                println!("    {:<48} {}", cmd.bold(), desc.dimmed());
             }
         }
     }
@@ -136,7 +142,33 @@ async fn dispatch(parts: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         ["registry", "agents-get", id] => {
             crate::registry::run(RegistryCommands::AgentsGet { id: id.to_string() }).await?
         }
+        ["registry", "pre-register", name, hostname] => {
+            crate::registry::run(RegistryCommands::PreRegister {
+                name: name.to_string(),
+                hostname: hostname.to_string(),
+                os: None,
+                arch: None,
+                ttl: None,
+            })
+            .await?
+        }
+        ["registry", "pre-register", name, hostname, "--os", os] => {
+            crate::registry::run(RegistryCommands::PreRegister {
+                name: name.to_string(),
+                hostname: hostname.to_string(),
+                os: Some(os.to_string()),
+                arch: None,
+                ttl: None,
+            })
+            .await?
+        }
+        ["registry", "deregister", id] => {
+            crate::registry::run(RegistryCommands::Deregister { id: id.to_string() }).await?
+        }
         ["registry", "pending"] => crate::registry::run(RegistryCommands::Pending).await?,
+        ["registry", "pending-delete", id] => {
+            crate::registry::run(RegistryCommands::PendingDelete { id: id.to_string() }).await?
+        }
         ["registry", "stats"] => crate::registry::run(RegistryCommands::Stats).await?,
         ["registry", "tokens"] => crate::registry::run(RegistryCommands::Tokens).await?,
 

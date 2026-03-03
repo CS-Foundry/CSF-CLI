@@ -67,7 +67,7 @@ pub async fn list() -> Result<(), Box<dyn std::error::Error>> {
 
 pub async fn get(id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let (client, server, token) = auth()?;
-    let url = format!("{}/agents/{}", base_url(&server), id);
+    let url = format!("{}/registry/admin/agents/{}", base_url(&server), id);
 
     let pb = display::spinner("fetching agent...");
     let data = get_json(&client, &url, &token).await;

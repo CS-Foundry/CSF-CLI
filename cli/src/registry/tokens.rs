@@ -4,9 +4,10 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Token {
-    id: String,
+    agent_id: String,
+    expected_name: String,
+    expected_hostname: String,
     description: Option<String>,
-    created_at: String,
     expires_at: String,
     used: bool,
 }
@@ -25,30 +26,31 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     display::section("Registry  /  Registration Tokens");
 
     if tokens.is_empty() {
-        display::info("no tokens found");
+        display::info("no active registration tokens");
         return Ok(());
     }
 
-    let mut table =
-        Table::new(vec!["ID", "DESCRIPTION", "CREATED", "EXPIRES", "USED"]).with_color(
-            |col, val| {
-                if col == 4 {
-                    if val == "yes" {
-                        colored::Color::Green
-                    } else {
-                        colored::Color::Yellow
-                    }
-                } else {
-                    colored::Color::White
-                }
-            },
-        );
+    let mut table = Table::new(vec![
+        "AGENT ID", "NAME", "HOSTNAME", "DESCRIPTION", "EXPIRES", "USED",
+    ])
+    .with_color(|col, val| {
+        if col == 5 {
+            if val == "yes" {
+                colored::Color::Green
+            } else {
+                colored::Color::Yellow
+            }
+        } else {
+            colored::Color::White
+        }
+    });
 
     for t in &tokens {
         table.add_row(vec![
-            t.id[..8].to_string(),
+            t.agent_id[..8].to_string(),
+            t.expected_name.clone(),
+            t.expected_hostname.clone(),
             t.description.clone().unwrap_or_else(|| "-".to_string()),
-            t.created_at.clone(),
             t.expires_at.clone(),
             if t.used { "yes" } else { "no" }.to_string(),
         ]);

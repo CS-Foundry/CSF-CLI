@@ -11,6 +11,7 @@ use crate::display;
 use crate::nodes::NodeCommands;
 use crate::registry::RegistryCommands;
 use crate::volumes::VolumeCommands;
+use crate::workloads::WorkloadCommands;
 
 const COMMANDS: &[(&str, &str)] = &[
     ("login", "authenticate with the server"),
@@ -30,6 +31,9 @@ const COMMANDS: &[(&str, &str)] = &[
     ("registry tokens", "list active registration tokens"),
     ("nodes list", "list all nodes"),
     ("nodes metrics", "show system metrics"),
+    ("workloads list", "list all workloads"),
+    ("workloads create <name> <image>", "schedule a new workload"),
+    ("workloads delete <id>", "delete a workload"),
     ("help", "show available commands"),
     ("exit", "exit the shell"),
 ];
@@ -110,6 +114,14 @@ fn print_help() {
             ],
         ),
         ("Nodes", &["nodes list", "nodes metrics"]),
+        (
+            "Workloads",
+            &[
+                "workloads list",
+                "workloads create <name> <image>",
+                "workloads delete <id>",
+            ],
+        ),
         ("Shell", &["help", "exit"]),
     ];
 
@@ -174,6 +186,31 @@ async fn dispatch(parts: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
 
         ["nodes", "list"] => crate::nodes::run(NodeCommands::List).await?,
         ["nodes", "metrics"] => crate::nodes::run(NodeCommands::Metrics).await?,
+
+        ["workloads", "list"] => crate::workloads::run(WorkloadCommands::List).await?,
+        ["workloads", "create", name, image] => {
+            crate::workloads::run(WorkloadCommands::Create {
+                name: name.to_string(),
+                image: image.to_string(),
+                cpu: 500,
+                memory: 536870912,
+                disk: 10737418240,
+            })
+            .await?
+        }
+        ["workloads", "create", name, image, "--cpu", cpu] => {
+            crate::workloads::run(WorkloadCommands::Create {
+                name: name.to_string(),
+                image: image.to_string(),
+                cpu: cpu.parse().unwrap_or(500),
+                memory: 536870912,
+                disk: 10737418240,
+            })
+            .await?
+        }
+        ["workloads", "delete", id] => {
+            crate::workloads::run(WorkloadCommands::Delete { id: id.to_string() }).await?
+        }
 
         ["help"] | ["?"] => print_help(),
 

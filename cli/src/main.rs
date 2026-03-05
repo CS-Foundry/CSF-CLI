@@ -6,6 +6,7 @@ mod registry;
 mod repl;
 mod user;
 mod volumes;
+mod workloads;
 
 use clap::{Parser, Subcommand};
 
@@ -31,6 +32,8 @@ enum Commands {
     Registry(registry::RegistryCommands),
     #[command(subcommand, about = "View cluster nodes and metrics")]
     Nodes(nodes::NodeCommands),
+    #[command(subcommand, about = "Manage workloads")]
+    Workloads(workloads::WorkloadCommands),
 }
 
 #[tokio::main]
@@ -48,6 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Volumes(cmd)) => volumes::run(cmd).await?,
         Some(Commands::Registry(cmd)) => registry::run(cmd).await?,
         Some(Commands::Nodes(cmd)) => nodes::run(cmd).await?,
+        Some(Commands::Workloads(cmd)) => workloads::run(cmd).await?,
     }
 
     Ok(())

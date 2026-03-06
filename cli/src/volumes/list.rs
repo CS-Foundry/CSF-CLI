@@ -6,11 +6,10 @@ use serde::Deserialize;
 struct Volume {
     id: String,
     name: String,
-    size_gb: u64,
+    size_gb: i32,
     pool: String,
     status: String,
-    encrypted: bool,
-    node_id: Option<String>,
+    attached_to_agent: Option<String>,
 }
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,9 +20,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let data = get_json(&client, &url, &token).await;
     pb.finish_and_clear();
 
-    let data = data?;
-
-    let volumes: Vec<Volume> = serde_json::from_value(data)?;
+    let volumes: Vec<Volume> = serde_json::from_value(data?)?;
 
     display::section("Volumes");
 
@@ -32,16 +29,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let mut table = Table::new(vec![
-        "ID", "NAME", "SIZE", "POOL", "STATUS", "ENCRYPTED", "NODE",
-    ])
-    .with_color(|col, val| {
-        if col == 4 {
-            display::status_color(val)
-        } else {
-            colored::Color::White
-        }
-    });
+    let mut table = Table::new(vec!["ID", "NAME", "SIZE", "POOL", "STATUS", "AGENT"])
+        .with_color(|col, val| {
+            if col == 4 {
+                display::status_color(val)
+            } else {
+                colored::Color::White
+            }
+        });
 
     for v in &volumes {
         table.add_row(vec![
@@ -50,8 +45,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             format!("{}G", v.size_gb),
             v.pool.clone(),
             v.status.clone(),
-            if v.encrypted { "yes" } else { "no" }.to_string(),
-            v.node_id.clone().unwrap_or_else(|| "-".to_string()),
+            v.attached_to_agent
+                .as_deref()
+                .map(|s| s[..8].to_string())
+                .unwrap_or_else(|| "-".to_string()),
         ]);
     }
 

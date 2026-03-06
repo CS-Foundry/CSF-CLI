@@ -19,8 +19,12 @@ const COMMANDS: &[(&str, &str)] = &[
     ("status", "show session and user info"),
     ("volumes list", "list all volumes"),
     ("volumes get <id>", "show volume details"),
-    ("volumes snapshots", "list all snapshots"),
-    ("volumes nodes", "list cluster nodes (volume manager)"),
+    ("volumes create <name> --size <gb>", "create a new volume"),
+    ("volumes delete <id>", "delete a volume"),
+    ("volumes attach <id> --agent <agent-id>", "attach volume to agent"),
+    ("volumes detach <id>", "detach volume from agent"),
+    ("volumes snapshots --volume <id>", "list snapshots of a volume"),
+    ("volumes snapshot-create --volume <id> --name <name>", "create a snapshot"),
     ("registry agents", "list registered agents"),
     ("registry agents-get <id>", "show agent details"),
     ("registry pre-register <name> <hostname>", "pre-register a new node"),
@@ -96,8 +100,12 @@ fn print_help() {
             &[
                 "volumes list",
                 "volumes get <id>",
-                "volumes snapshots",
-                "volumes nodes",
+                "volumes create <name> --size <gb>",
+                "volumes delete <id>",
+                "volumes attach <id> --agent <agent-id>",
+                "volumes detach <id>",
+                "volumes snapshots --volume <id>",
+                "volumes snapshot-create --volume <id> --name <name>",
             ],
         ),
         (
@@ -147,8 +155,54 @@ async fn dispatch(parts: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         ["volumes", "get", id] => {
             crate::volumes::run(VolumeCommands::Get { id: id.to_string() }).await?
         }
-        ["volumes", "snapshots"] => crate::volumes::run(VolumeCommands::Snapshots).await?,
-        ["volumes", "nodes"] => crate::volumes::run(VolumeCommands::Nodes).await?,
+        ["volumes", "create", name, "--size", size] => {
+            crate::volumes::run(VolumeCommands::Create {
+                name: name.to_string(),
+                size: size.parse().unwrap_or(10),
+                pool: None,
+            })
+            .await?
+        }
+        ["volumes", "create", name, "--size", size, "--pool", pool] => {
+            crate::volumes::run(VolumeCommands::Create {
+                name: name.to_string(),
+                size: size.parse().unwrap_or(10),
+                pool: Some(pool.to_string()),
+            })
+            .await?
+        }
+        ["volumes", "delete", id] => {
+            crate::volumes::run(VolumeCommands::Delete { id: id.to_string() }).await?
+        }
+        ["volumes", "attach", id, "--agent", agent] => {
+            crate::volumes::run(VolumeCommands::Attach {
+                id: id.to_string(),
+                agent: agent.to_string(),
+                workload: None,
+            })
+            .await?
+        }
+        ["volumes", "attach", id, "--agent", agent, "--workload", wid] => {
+            crate::volumes::run(VolumeCommands::Attach {
+                id: id.to_string(),
+                agent: agent.to_string(),
+                workload: Some(wid.to_string()),
+            })
+            .await?
+        }
+        ["volumes", "detach", id] => {
+            crate::volumes::run(VolumeCommands::Detach { id: id.to_string() }).await?
+        }
+        ["volumes", "snapshots", "--volume", vid] => {
+            crate::volumes::run(VolumeCommands::Snapshots { volume: vid.to_string() }).await?
+        }
+        ["volumes", "snapshot-create", "--volume", vid, "--name", name] => {
+            crate::volumes::run(VolumeCommands::SnapshotCreate {
+                volume: vid.to_string(),
+                name: name.to_string(),
+            })
+            .await?
+        }
 
         ["registry", "agents"] => crate::registry::run(RegistryCommands::Agents).await?,
         ["registry", "agents-get", id] => {

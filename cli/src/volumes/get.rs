@@ -6,14 +6,15 @@ use serde::Deserialize;
 struct Volume {
     id: String,
     name: String,
-    size_gb: u64,
+    size_gb: i32,
     pool: String,
+    image_name: String,
     status: String,
-    encrypted: bool,
-    node_id: Option<String>,
+    attached_to_agent: Option<String>,
+    attached_to_workload: Option<String>,
+    mapped_device: Option<String>,
     created_at: String,
-    updated_at: String,
-    version: u64,
+    updated_at: Option<String>,
 }
 
 pub async fn run(id: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -24,8 +25,7 @@ pub async fn run(id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let data = get_json(&client, &url, &token).await;
     pb.finish_and_clear();
 
-    let data = data?;
-    let v: Volume = serde_json::from_value(data)?;
+    let v: Volume = serde_json::from_value(data?)?;
 
     section("Volume");
 
@@ -33,18 +33,25 @@ pub async fn run(id: &str) -> Result<(), Box<dyn std::error::Error>> {
     kv("Name", &v.name);
     kv("Size", &format!("{}G", v.size_gb));
     kv("Pool", &v.pool);
+    kv("Image", &v.image_name);
     kv_colored("Status", &v.status, status_color(&v.status));
     kv(
-        "Encrypted",
-        if v.encrypted { "yes" } else { "no" },
+        "Agent",
+        v.attached_to_agent.as_deref().unwrap_or("-"),
     );
     kv(
-        "Node",
-        &v.node_id.unwrap_or_else(|| "unattached".to_string()),
+        "Workload",
+        v.attached_to_workload.as_deref().unwrap_or("-"),
     );
-    kv("Version", &v.version.to_string());
+    kv(
+        "Device",
+        v.mapped_device.as_deref().unwrap_or("-"),
+    );
     kv("Created", &v.created_at);
-    kv("Updated", &v.updated_at);
+    kv(
+        "Updated",
+        v.updated_at.as_deref().unwrap_or("-"),
+    );
 
     println!();
     Ok(())

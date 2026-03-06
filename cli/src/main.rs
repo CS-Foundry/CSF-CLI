@@ -1,5 +1,6 @@
 mod config;
 mod display;
+mod events;
 mod http;
 mod nodes;
 mod registry;
@@ -34,6 +35,8 @@ enum Commands {
     Nodes(nodes::NodeCommands),
     #[command(subcommand, about = "Manage workloads")]
     Workloads(workloads::WorkloadCommands),
+    #[command(subcommand, about = "View failover and audit events")]
+    Events(events::EventCommands),
 }
 
 #[tokio::main]
@@ -52,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Registry(cmd)) => registry::run(cmd).await?,
         Some(Commands::Nodes(cmd)) => nodes::run(cmd).await?,
         Some(Commands::Workloads(cmd)) => workloads::run(cmd).await?,
+        Some(Commands::Events(cmd)) => events::run(cmd).await?,
     }
 
     Ok(())

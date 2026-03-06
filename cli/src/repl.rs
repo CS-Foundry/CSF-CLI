@@ -11,6 +11,7 @@ use crate::display;
 use crate::nodes::NodeCommands;
 use crate::registry::RegistryCommands;
 use crate::volumes::VolumeCommands;
+use crate::events::EventCommands;
 use crate::workloads::WorkloadCommands;
 
 const COMMANDS: &[(&str, &str)] = &[
@@ -34,10 +35,14 @@ const COMMANDS: &[(&str, &str)] = &[
     ("registry stats", "show registry statistics"),
     ("registry tokens", "list active registration tokens"),
     ("nodes list", "list all nodes"),
+    ("nodes get <id>", "show node details"),
     ("nodes metrics", "show system metrics"),
+    ("nodes agent-metrics <id>", "show metrics for a specific agent"),
     ("workloads list", "list all workloads"),
+    ("workloads get <id>", "show workload details"),
     ("workloads create <name> <image>", "schedule a new workload"),
     ("workloads delete <id>", "delete a workload"),
+    ("events list", "list failover and audit events"),
     ("help", "show available commands"),
     ("exit", "exit the shell"),
 ];
@@ -121,15 +126,17 @@ fn print_help() {
                 "registry tokens",
             ],
         ),
-        ("Nodes", &["nodes list", "nodes metrics"]),
+        ("Nodes", &["nodes list", "nodes get <id>", "nodes metrics", "nodes agent-metrics <id>"]),
         (
             "Workloads",
             &[
                 "workloads list",
+                "workloads get <id>",
                 "workloads create <name> <image>",
                 "workloads delete <id>",
             ],
         ),
+        ("Events", &["events list"]),
         ("Shell", &["help", "exit"]),
     ];
 
@@ -239,7 +246,13 @@ async fn dispatch(parts: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         ["registry", "tokens"] => crate::registry::run(RegistryCommands::Tokens).await?,
 
         ["nodes", "list"] => crate::nodes::run(NodeCommands::List).await?,
+        ["nodes", "get", id] => {
+            crate::nodes::run(NodeCommands::Get { id: id.to_string() }).await?
+        }
         ["nodes", "metrics"] => crate::nodes::run(NodeCommands::Metrics).await?,
+        ["nodes", "agent-metrics", id] => {
+            crate::nodes::run(NodeCommands::AgentMetrics { id: id.to_string() }).await?
+        }
 
         ["workloads", "list"] => crate::workloads::run(WorkloadCommands::List).await?,
         ["workloads", "create", name, image] => {
@@ -262,9 +275,14 @@ async fn dispatch(parts: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
             })
             .await?
         }
+        ["workloads", "get", id] => {
+            crate::workloads::run(WorkloadCommands::Get { id: id.to_string() }).await?
+        }
         ["workloads", "delete", id] => {
             crate::workloads::run(WorkloadCommands::Delete { id: id.to_string() }).await?
         }
+
+        ["events", "list"] => crate::events::run(EventCommands::List).await?,
 
         ["help"] | ["?"] => print_help(),
 

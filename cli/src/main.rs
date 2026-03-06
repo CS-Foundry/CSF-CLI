@@ -2,6 +2,7 @@ mod config;
 mod display;
 mod events;
 mod http;
+mod networks;
 mod nodes;
 mod registry;
 mod repl;
@@ -37,6 +38,8 @@ enum Commands {
     Workloads(workloads::WorkloadCommands),
     #[command(subcommand, about = "View failover and audit events")]
     Events(events::EventCommands),
+    #[command(subcommand, about = "Manage overlay networks")]
+    Networks(networks::NetworkCommands),
 }
 
 #[tokio::main]
@@ -56,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Nodes(cmd)) => nodes::run(cmd).await?,
         Some(Commands::Workloads(cmd)) => workloads::run(cmd).await?,
         Some(Commands::Events(cmd)) => events::run(cmd).await?,
+        Some(Commands::Networks(cmd)) => networks::run(cmd).await?,
     }
 
     Ok(())

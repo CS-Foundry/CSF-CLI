@@ -8,10 +8,11 @@ use rustyline::{CompletionType, Config, Context, Editor, Helper};
 use std::borrow::Cow;
 
 use crate::display;
+use crate::events::EventCommands;
+use crate::networks::NetworkCommands;
 use crate::nodes::NodeCommands;
 use crate::registry::RegistryCommands;
 use crate::volumes::VolumeCommands;
-use crate::events::EventCommands;
 use crate::workloads::WorkloadCommands;
 
 const COMMANDS: &[(&str, &str)] = &[
@@ -43,6 +44,15 @@ const COMMANDS: &[(&str, &str)] = &[
     ("workloads create <name> <image>", "schedule a new workload"),
     ("workloads delete <id>", "delete a workload"),
     ("events list", "list failover and audit events"),
+    ("networks list", "list all overlay networks"),
+    ("networks get <id>", "show network details"),
+    ("networks create <name> <cidr>", "create a new overlay network"),
+    ("networks delete <id>", "delete a network"),
+    ("networks policies --network <id>", "list network policies"),
+    ("networks policy-create --network <id> --direction <in|out> --action <allow|deny>", "create a network policy"),
+    ("networks members --network <id>", "list network members"),
+    ("networks member-add --network <id> --workload <id>", "add workload to network"),
+    ("networks member-remove --network <id> --workload <id>", "remove workload from network"),
     ("help", "show available commands"),
     ("exit", "exit the shell"),
 ];
@@ -63,7 +73,7 @@ impl Completer for CsfHelper {
             .iter()
             .filter(|(cmd, _)| cmd.starts_with(prefix))
             .map(|(cmd, desc)| Pair {
-                display: format!("{:<48} {}", cmd, desc.dimmed()),
+                display: format!("{:<56} {}", cmd, desc.dimmed()),
                 replacement: cmd.to_string(),
             })
             .collect();
@@ -137,6 +147,20 @@ fn print_help() {
             ],
         ),
         ("Events", &["events list"]),
+        (
+            "Networks",
+            &[
+                "networks list",
+                "networks get <id>",
+                "networks create <name> <cidr>",
+                "networks delete <id>",
+                "networks policies --network <id>",
+                "networks policy-create --network <id> --direction <in|out> --action <allow|deny>",
+                "networks members --network <id>",
+                "networks member-add --network <id> --workload <id>",
+                "networks member-remove --network <id> --workload <id>",
+            ],
+        ),
         ("Shell", &["help", "exit"]),
     ];
 
@@ -145,11 +169,18 @@ fn print_help() {
         for cmd in *cmds {
             let base = cmd.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
             if let Some((_, desc)) = COMMANDS.iter().find(|(c, _)| c.starts_with(&base)) {
-                println!("    {:<48} {}", cmd.bold(), desc.dimmed());
+                println!("    {:<56} {}", cmd.bold(), desc.dimmed());
             }
         }
     }
     println!();
+}
+
+fn parse_flag<'a>(parts: &[&'a str], flag: &str) -> Option<&'a str> {
+    parts
+        .windows(2)
+        .find(|w| w[0] == flag)
+        .map(|w| w[1])
 }
 
 async fn dispatch(parts: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
@@ -283,6 +314,62 @@ async fn dispatch(parts: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         ["events", "list"] => crate::events::run(EventCommands::List).await?,
+
+        ["networks", "list"] => crate::networks::run(NetworkCommands::List).await?,
+        ["networks", "get", id] => {
+            crate::networks::run(NetworkCommands::Get { id: id.to_string() }).await?
+        }
+        ["networks", "delete", id] => {
+            crate::networks::run(NetworkCommands::Delete { id: id.to_string() }).await?
+        }
+        ["networks", "create", name, cidr] => {
+            crate::networks::run(NetworkCommands::Create {
+                name: name.to_string(),
+                cidr: cidr.to_string(),
+                overlay: "wireguard".to_string(),
+            })
+            .await?
+        }
+        ["networks", "create", name, cidr, "--overlay", overlay] => {
+            crate::networks::run(NetworkCommands::Create {
+                name: name.to_string(),
+                cidr: cidr.to_string(),
+                overlay: overlay.to_string(),
+            })
+            .await?
+        }
+        parts if parts.first() == Some(&"networks") && parts.get(1) == Some(&"policies") => {
+            let network = parse_flag(parts, "--network").unwrap_or("").to_string();
+            crate::networks::run(NetworkCommands::Policies { network }).await?
+        }
+        parts if parts.first() == Some(&"networks") && parts.get(1) == Some(&"policy-create") => {
+            let network = parse_flag(parts, "--network").unwrap_or("").to_string();
+            let direction = parse_flag(parts, "--direction").unwrap_or("ingress").to_string();
+            let action = parse_flag(parts, "--action").unwrap_or("allow").to_string();
+            let priority = parse_flag(parts, "--priority").and_then(|v| v.parse().ok()).unwrap_or(100);
+            let source = parse_flag(parts, "--source").map(|s| s.to_string());
+            let destination = parse_flag(parts, "--destination").map(|s| s.to_string());
+            let port = parse_flag(parts, "--port").and_then(|v| v.parse().ok());
+            let protocol = parse_flag(parts, "--protocol").map(|s| s.to_string());
+            crate::networks::run(NetworkCommands::PolicyCreate {
+                network, direction, action, priority, source, destination, port, protocol,
+            })
+            .await?
+        }
+        parts if parts.first() == Some(&"networks") && parts.get(1) == Some(&"members") => {
+            let network = parse_flag(parts, "--network").unwrap_or("").to_string();
+            crate::networks::run(NetworkCommands::Members { network }).await?
+        }
+        parts if parts.first() == Some(&"networks") && parts.get(1) == Some(&"member-add") => {
+            let network = parse_flag(parts, "--network").unwrap_or("").to_string();
+            let workload = parse_flag(parts, "--workload").unwrap_or("").to_string();
+            crate::networks::run(NetworkCommands::MemberAdd { network, workload }).await?
+        }
+        parts if parts.first() == Some(&"networks") && parts.get(1) == Some(&"member-remove") => {
+            let network = parse_flag(parts, "--network").unwrap_or("").to_string();
+            let workload = parse_flag(parts, "--workload").unwrap_or("").to_string();
+            crate::networks::run(NetworkCommands::MemberRemove { network, workload }).await?
+        }
 
         ["help"] | ["?"] => print_help(),
 

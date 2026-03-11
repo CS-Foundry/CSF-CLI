@@ -2,19 +2,60 @@ use colored::{Color, Colorize};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 
+fn is_light_background() -> bool {
+    if let Ok(val) = std::env::var("COLORFGBG") {
+        if let Some(bg) = val.split(';').last() {
+            if let Ok(n) = bg.trim().parse::<u8>() {
+                return n >= 8;
+            }
+        }
+    }
+    false
+}
+
 pub fn banner() {
-    let art = r#"
-   ██████╗███████╗███████╗
-  ██╔════╝██╔════╝██╔════╝
-  ██║     ███████╗█████╗
-  ██║     ╚════██║██╔══╝
-  ╚██████╗███████║██║
-   ╚═════╝╚══════╝╚═╝
-    "#;
-    println!("{}", art.bold().cyan());
+    use std::io::Write;
+    use std::thread::sleep;
+
+    let lines = [
+        "   ██████╗███████╗███████╗██╗  ██╗",
+        "  ██╔════╝██╔════╝██╔════╝╚██╗██╔╝",
+        "  ██║     ███████╗█████╗   ╚███╔╝ ",
+        "  ██║     ╚════██║██╔══╝   ██╔██╗ ",
+        "  ╚██████╗███████║██║     ██╔╝╚██╗",
+        "   ╚═════╝╚══════╝╚═╝     ╚═╝  ╚═╝",
+    ];
+
+    let colors: [(u8, u8, u8); 6] = if is_light_background() {
+        [
+            (30,  30,  30),
+            (60,  60,  60),
+            (90,  90,  90),
+            (120, 120, 120),
+            (150, 150, 150),
+            (180, 180, 180),
+        ]
+    } else {
+        [
+            (255, 255, 255),
+            (220, 220, 220),
+            (185, 185, 185),
+            (150, 150, 150),
+            (115, 115, 115),
+            (80,  80,  80),
+        ]
+    };
+
+    println!();
+    for (line, (r, g, b)) in lines.iter().zip(colors.iter()) {
+        println!("{}", line.color(Color::TrueColor { r: *r, g: *g, b: *b }).bold());
+        std::io::stdout().flush().ok();
+        sleep(Duration::from_millis(55));
+    }
+
     println!(
-        "  {}  {}\n",
-        "Cloud Service Foundry".bold(),
+        "\n  {}  {}\n",
+        "Cloud Systems Fabric Xchange".bold(),
         format!("v{}", env!("CARGO_PKG_VERSION")).dimmed()
     );
 }
@@ -106,7 +147,7 @@ impl Table {
             .headers
             .iter()
             .enumerate()
-            .map(|(i, h)| format!("{:<w$}", h.bold().to_string(), w = widths[i] + 10))
+            .map(|(i, h)| format!("{:<w$}", h, w = widths[i]).bold().to_string())
             .collect::<Vec<_>>()
             .join("  ");
         println!("  {}", header_line);
@@ -120,11 +161,11 @@ impl Table {
                 .enumerate()
                 .map(|(i, cell)| {
                     let w = widths.get(i).copied().unwrap_or(cell.len());
+                    let padded = format!("{:<w$}", cell, w = w);
                     if let Some(ref f) = self.color_fn {
-                        let color = f(i, cell);
-                        format!("{:<w$}", cell.color(color).to_string(), w = w + 10)
+                        padded.color(f(i, cell)).to_string()
                     } else {
-                        format!("{:<w$}", cell, w = w)
+                        padded
                     }
                 })
                 .collect::<Vec<_>>()

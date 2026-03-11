@@ -497,7 +497,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     loop {
-        let prompt = format!("{} ", "csf>".cyan().bold());
+        let prompt = format!("{} ", "csfx>".truecolor(220, 220, 220));
 
         match rl.readline(&prompt) {
             Ok(line) => {

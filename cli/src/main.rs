@@ -50,12 +50,13 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    display::banner();
-
     let cli = Cli::parse();
 
     match cli.command {
-        None => repl::run().await?,
+        None => {
+            display::banner();
+            repl::run().await?;
+        }
         Some(Commands::Login) => user::login::login().await?,
         Some(Commands::Logout) => user::logout::logout().await?,
         Some(Commands::Status) => user::status::status().await?,

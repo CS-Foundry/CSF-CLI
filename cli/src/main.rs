@@ -15,7 +15,7 @@ mod workloads;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "csf")]
+#[command(name = "csfx")]
 #[command(about = "Cloud Service Foundry CLI")]
 #[command(version)]
 #[command(disable_help_subcommand = true)]

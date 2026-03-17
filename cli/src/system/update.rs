@@ -33,5 +33,50 @@ pub async fn run_status() -> Result<(), Box<dyn std::error::Error>> {
     };
     display::kv_colored("last result", result, color);
 
+    let paused = resp["paused"].as_bool().unwrap_or(false);
+    display::kv_colored(
+        "paused",
+        if paused { "yes" } else { "no" },
+        if paused { colored::Color::Yellow } else { colored::Color::Green },
+    );
+
+    Ok(())
+}
+
+pub async fn run_pause() -> Result<(), Box<dyn std::error::Error>> {
+    let (client, server, token) = auth()?;
+    let url = format!("{}/system/update/pause", base_url(&server));
+
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        crate::display::error(&format!("request failed: {}", resp.status()));
+        std::process::exit(1);
+    }
+
+    display::success("updates paused");
+    Ok(())
+}
+
+pub async fn run_resume() -> Result<(), Box<dyn std::error::Error>> {
+    let (client, server, token) = auth()?;
+    let url = format!("{}/system/update/resume", base_url(&server));
+
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        crate::display::error(&format!("request failed: {}", resp.status()));
+        std::process::exit(1);
+    }
+
+    display::success("updates resumed");
     Ok(())
 }
